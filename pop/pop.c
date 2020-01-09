@@ -757,7 +757,7 @@ static struct Account *pop_ac_find(struct Account *a, const char *path)
     return NULL;
 
   struct PopAccountData *adata = a->adata;
-  struct ConnAccount *cac = &adata->conn_account;
+  struct ConnAccount *cac = &adata->conn->account;
 
   if ((mutt_str_strcasecmp(url->host, cac->host) != 0) ||
       (mutt_str_strcasecmp(url->user, cac->user) != 0))
@@ -788,19 +788,19 @@ static int pop_ac_add(struct Account *a, struct Mailbox *m)
   if (!url)
     return 0;
 
-  mutt_str_strfcpy(adata->conn_account.user, url->user,
-                   sizeof(adata->conn_account.user));
-  mutt_str_strfcpy(adata->conn_account.pass, url->pass,
-                   sizeof(adata->conn_account.pass));
-  mutt_str_strfcpy(adata->conn_account.host, url->host,
-                   sizeof(adata->conn_account.host));
-  adata->conn_account.port = url->port;
-  adata->conn_account.type = MUTT_ACCT_TYPE_POP;
+  mutt_str_strfcpy(adata->conn->account.user, url->user,
+                   sizeof(adata->conn->account.user));
+  mutt_str_strfcpy(adata->conn->account.pass, url->pass,
+                   sizeof(adata->conn->account.pass));
+  mutt_str_strfcpy(adata->conn->account.host, url->host,
+                   sizeof(adata->conn->account.host));
+  adata->conn->account.port = url->port;
+  adata->conn->account.type = MUTT_ACCT_TYPE_POP;
 
-  if (adata->conn_account.user[0] != '\0')
-    adata->conn_account.flags |= MUTT_ACCT_USER;
-  if (adata->conn_account.pass[0] != '\0')
-    adata->conn_account.flags |= MUTT_ACCT_PASS;
+  if (adata->conn->account.user[0] != '\0')
+    adata->conn->account.flags |= MUTT_ACCT_USER;
+  if (adata->conn->account.pass[0] != '\0')
+    adata->conn->account.flags |= MUTT_ACCT_PASS;
   url_free(&url);
 
   return 0;
