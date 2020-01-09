@@ -826,7 +826,7 @@ static void cmd_parse_status(struct ImapAccountData *adata, char *s)
   }
 
   struct Url url;
-  mutt_account_tourl(&adata->conn_account, &url);
+  mutt_account_tourl(&adata->conn->account, &url);
   url.path = mailbox;
   char path[PATH_MAX];
   url_tostring(&url, path, sizeof(path), 0);
