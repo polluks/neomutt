@@ -1865,7 +1865,7 @@ static int imap_ac_add(struct Account *a, struct Mailbox *m)
 
   if (!adata)
   {
-    struct ConnAccount cac;
+    struct ConnAccount cac = { { 0 } };
     char mailbox[PATH_MAX];
 
     if (imap_parse_path(mailbox_path(m), &cac, mailbox, sizeof(mailbox)) < 0)
