@@ -796,6 +796,7 @@ static int pop_ac_add(struct Account *a, struct Mailbox *m)
                    sizeof(adata->conn->account.host));
   adata->conn->account.port = url->port;
   adata->conn->account.type = MUTT_ACCT_TYPE_POP;
+  adata->conn->account.service = "pop";
 
   if (adata->conn->account.user[0] != '\0')
     adata->conn->account.flags |= MUTT_ACCT_USER;
