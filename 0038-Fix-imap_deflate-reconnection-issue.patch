@@ -1,0 +1,32 @@
+From 2541fa8a49761df2ba68f79e9b9fcc5887bdb6e0 Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Tue, 17 Dec 2019 14:53:25 -0800
+Subject: [PATCH] Fix $imap_deflate reconnection issue.
+
+Restore connection methods and data on close, so the subsequent reopen
+succeeds.
+---
+ mutt_zstrm.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/mutt_zstrm.c b/mutt_zstrm.c
+index d7d5247d..7507594c 100644
+--- a/mutt_zstrm.c
++++ b/mutt_zstrm.c
+@@ -73,6 +73,13 @@ static int mutt_zstrm_close (CONNECTION* conn)
+ 	zctx->write.z.total_in, zctx->write.z.total_out,
+ 	(float)zctx->write.z.total_in / (float)zctx->write.z.total_out));
+ 
++  conn->sockdata   = zctx->next_conn.sockdata;
++  conn->conn_open  = zctx->next_conn.conn_open;
++  conn->conn_close = zctx->next_conn.conn_close;
++  conn->conn_read  = zctx->next_conn.conn_read;
++  conn->conn_write = zctx->next_conn.conn_write;
++  conn->conn_poll  = zctx->next_conn.conn_poll;
++
+   inflateEnd (&zctx->read.z);
+   deflateEnd (&zctx->write.z);
+   FREE (&zctx->read.buf);
+-- 
+2.24.1
+

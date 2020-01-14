@@ -1,0 +1,25 @@
+From d1d3a9891cd8a9a4fb09a242e1eb840a6e202f00 Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Sun, 1 Dec 2019 07:44:05 -0800
+Subject: [PATCH] Add USE_ZLIB to makedoc-defs.h so imap_deflate manual is
+ generated.
+
+---
+ doc/makedoc-defs.h | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/doc/makedoc-defs.h b/doc/makedoc-defs.h
+index a5e631fb..20ed17d6 100644
+--- a/doc/makedoc-defs.h
++++ b/doc/makedoc-defs.h
+@@ -70,4 +70,7 @@
+ # ifndef USE_AUTOCRYPT
+ #  define USE_AUTOCRYPT
+ # endif
++# ifndef USE_ZLIB
++#  define USE_ZLIB
++# endif
+ #endif
+-- 
+2.24.1
+

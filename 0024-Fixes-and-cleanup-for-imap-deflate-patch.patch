@@ -1,0 +1,259 @@
+From f2f6dd46596f30fdbdd5f8d85f253242a095cb9c Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Mon, 18 Nov 2019 19:11:52 -0800
+Subject: [PATCH] Fixes and cleanup for imap deflate patch.
+
+Rework mutt_zstrm_read():
+- Pass along the error if conn_read() returns < 0.
+- Separate out conn_eof and stream_eof flags so they can be dealt
+  with differently.
+- Don't use Z_FINISH on conn_eof, because the passed in buf might
+  not be big enough to hold the decompressed output.  Instead continue
+  looping until either Z_STREAM_END or Z_BUF_ERROR.
+- Remove recursive calls to retry, instead goto 'retry' target.
+- Remove op statements in malloc/free.
+- Bail on other rcs.  Mutt doesn't check errno on a read error, so
+  lump all other error codes into a -1 return value.  Use default so
+  we handle other weird stuff such as Z_NEED_DICT or Z_STREAM_ERROR
+  too.
+
+Convert $imap_deflate to boolean, default unset.
+
+Configure.ac fixes:
+- Fix indentation
+- Remove unneeded AM_CONDITIONAL.
+- Don't restore LDFLAGS and CPPFLAGS.  Save and restore LIBS instead.
+
+imap_conn_find() fixes:
+- Don't queue CAPABILITY command.  (This mistake has been in there
+  since UTF-8 and QRESYNC were added.).
+- Check imap_exec() returns 0 before wrapping.  Even with FAIL_OK set,
+  the imap_exec() can still return -1 on some errors.
+---
+ configure.ac | 13 ++++-------
+ imap/imap.c  |  7 +++---
+ init.h       |  2 +-
+ mutt.h       |  3 ---
+ mutt_zstrm.c | 63 ++++++++++++++++++++++------------------------------
+ 5 files changed, 34 insertions(+), 54 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index 4e9cf2b2..7fe55402 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -764,13 +764,12 @@ then
+   if test "$need_imap" = "yes"
+   then
+ 	have_zlib=
+-	saved_LDFLAGS="$LDFLAGS"
+-	saved_CPPFLAGS="$CPPFLAGS"
+-	if test "$zlib_prefix" != "yes"
++	if test "$zlib_prefix" != "yes" -a "$zlib_prefix" != "auto"
+ 	then
+ 	  LDFLAGS="$LDFLAGS -L$zlib_prefix/lib"
+-      CPPFLAGS="$CPPFLAGS -I$zlib_prefix/include"
++          CPPFLAGS="$CPPFLAGS -I$zlib_prefix/include"
+ 	fi
++        saved_LIBS="$LIBS"
+ 	AC_CHECK_HEADERS([zlib.h], [AC_CHECK_LIB([z], [deflate],
+ 					 [have_zlib=yes])])
+ 	if test "x$have_zlib" = "x"
+@@ -779,20 +778,16 @@ then
+ 	  then
+ 		AC_MSG_ERROR([ZLIB requested, but library or headers not found])
+ 	  fi
+-	  zlib_prefix=no
+ 	else
+ 	  MUTTLIBS="$MUTTLIBS -lz"
+ 	  AC_DEFINE(USE_ZLIB, 1, [Define if you have libz available])
+ 	  MUTT_LIB_OBJECTS="$MUTT_LIB_OBJECTS mutt_zstrm.o"
+-	  zlib_prefix=yes
+ 	fi
+-	LDFLAGS="$saved_LDFLAGS"
+-	CPPFLAGS="$saved_CPPFLAGS"
++        LIBS="$saved_LIBS"
+   else
+     AC_MSG_WARN([ZLIB was requested but IMAP is not enabled])
+   fi
+ fi
+-AM_CONDITIONAL(USE_ZLIB, test x$zlib_prefix = xyes)
+ 
+ dnl -- end imap dependencies --
+ 
+diff --git a/imap/imap.c b/imap/imap.c
+index 8e8684f8..a46c1004 100644
+--- a/imap/imap.c
++++ b/imap/imap.c
+@@ -427,15 +427,14 @@ IMAP_DATA* imap_conn_find (const ACCOUNT* account, int flags)
+   if (new && idata->state == IMAP_AUTHENTICATED)
+   {
+     /* capabilities may have changed */
+-    imap_exec (idata, "CAPABILITY", IMAP_CMD_QUEUE);
++    imap_exec (idata, "CAPABILITY", IMAP_CMD_FAIL_OK);
+ 
+ #if defined(USE_ZLIB)
+     /* RFC 4978 */
+     if (mutt_bit_isset (idata->capabilities, COMPRESS_DEFLATE))
+     {
+-      if (query_quadoption (OPT_IMAPDEFLATE,
+-	      _("Use deflate compression on connection?")) == MUTT_YES &&
+-	  imap_exec (idata, "COMPRESS DEFLATE", IMAP_CMD_FAIL_OK) != -2)
++      if (option (OPTIMAPDEFLATE) &&
++	  imap_exec (idata, "COMPRESS DEFLATE", IMAP_CMD_FAIL_OK) == 0)
+ 	mutt_zstrm_wrap_conn (idata->conn);
+     }
+ #endif
+diff --git a/init.h b/init.h
+index eec0db54..2389919d 100644
+--- a/init.h
++++ b/init.h
+@@ -1438,7 +1438,7 @@ struct option_t MuttVars[] = {
+   ** mileage may vary.
+   */
+ #ifdef USE_ZLIB
+-  { "imap_deflate",		DT_QUAD, R_NONE, {.l=OPT_IMAPDEFLATE}, {.l=MUTT_YES} },
++  { "imap_deflate",		DT_BOOL, R_NONE, {.l=OPTIMAPDEFLATE}, {.l=0} },
+   /*
+   ** .pp
+   ** When \fIset\fP, mutt will use the COMPRESS=DEFLATE extension (RFC
+diff --git a/mutt.h b/mutt.h
+index aa2ab672..04cc9c74 100644
+--- a/mutt.h
++++ b/mutt.h
+@@ -318,9 +318,6 @@ enum
+   OPT_FORWEDIT,
+   OPT_FCCATTACH,
+   OPT_INCLUDE,
+-#if defined(USE_IMAP) && defined(USE_ZLIB)
+-  OPT_IMAPDEFLATE,
+-#endif
+   OPT_MFUPTO,
+   OPT_MIMEFWD,
+   OPT_MIMEFWDREST,
+diff --git a/mutt_zstrm.c b/mutt_zstrm.c
+index fefdf995..406234c5 100644
+--- a/mutt_zstrm.c
++++ b/mutt_zstrm.c
+@@ -34,8 +34,8 @@ typedef struct
+     char *buf;
+     unsigned int len;
+     unsigned int pos;
+-    unsigned char has_pending:1;
+-    unsigned char is_eof:1;
++    unsigned int conn_eof : 1;
++    unsigned int stream_eof : 1;
+   } read, write;
+ 
+   /* underlying stream */
+@@ -47,15 +47,11 @@ zstrmctx;
+  * malloc/free */
+ static void *mutt_zstrm_malloc (void* op, unsigned int sze, unsigned int v)
+ {
+-  (void) op;
+-
+   return safe_calloc (sze, v);
+ }
+ 
+ static void mutt_zstrm_free (void* op, void* ptr)
+ {
+-  (void) op;
+-
+   FREE (&ptr);
+ }
+ 
+@@ -91,30 +87,25 @@ static int mutt_zstrm_read (CONNECTION* conn, char* buf, size_t len)
+   zstrmctx* zctx = conn->sockdata;
+   int rc = 0;
+   int zrc;
+-  int inflatemode = Z_SYNC_FLUSH;
+ 
+-  /* shortcut end of stream call */
+-  if (zctx->read.has_pending == 1 && zctx->read.is_eof == 1)
+-  {
+-    /* next read will yield an error */
+-    zctx->read.has_pending = 0;
+-    zctx->read.is_eof = 0;
++retry:
++  if (zctx->read.stream_eof)
+     return 0;
+-  }
+ 
+   /* when avail_out was 0 on last call, we need to call inflate again,
+    * because more data might be available using the current input, so
+    * avoid callling read on the underlying stream in that case (for it
+    * might block) */
+-  if (zctx->read.has_pending == 0 && zctx->read.pos == 0)
++  if (zctx->read.pos == 0 && !zctx->read.conn_eof)
+   {
+     rc = zctx->next_conn.conn_read (&zctx->next_conn,
+ 	zctx->read.buf, zctx->read.len);
+     dprint (4, (debugfile, "zstrm_read: consuming data from next "
+ 	"stream: %d bytes\n", rc));
+-    /* error or end of stream? ensure zlib flushes whatever it can */
+-    if (rc <= 0)
+-      inflatemode = Z_FINISH;
++    if (rc < 0)
++      return rc;
++    else if (rc == 0)
++      zctx->read.conn_eof = 1;
+     else
+       zctx->read.pos += rc;
+   }
+@@ -124,7 +115,7 @@ static int mutt_zstrm_read (CONNECTION* conn, char* buf, size_t len)
+   zctx->read.z.avail_out = (uInt) len;
+   zctx->read.z.next_out = (Bytef*) buf;
+ 
+-  zrc = inflate (&zctx->read.z, inflatemode);
++  zrc = inflate (&zctx->read.z, Z_SYNC_FLUSH);
+   dprint (4, (debugfile, "zstrm_read: rc=%d, "
+ 	"consumed %u/%u bytes, produced %u/%u bytes\n", zrc,
+ 	zctx->read.pos - zctx->read.z.avail_in, zctx->read.pos,
+@@ -145,29 +136,27 @@ static int mutt_zstrm_read (CONNECTION* conn, char* buf, size_t len)
+       {
+ 	/* there was progress, so must have been reading input */
+ 	dprint (4, (debugfile, "zstrm_read: inflate just consumed\n"));
+-	/* re-call ourselves to read more bytes */
+-	zctx->read.has_pending = 0;  /* trigger a read */
+-	return mutt_zstrm_read (conn, buf, len);
++        goto retry;
+       }
+       break;
+     case Z_STREAM_END:  /* everything flushed, nothing remaining */
++      dprint (4, (debugfile, "zstrm_read: inflate returned Z_STREAM_END.\n"));
+       zrc = len - zctx->read.z.avail_out;  /* "returned" bytes */
+-      zctx->read.has_pending = 1;
+-      zctx->read.is_eof = 1;
++      zctx->read.stream_eof = 1;
++      break;
++    case Z_BUF_ERROR:  /* no progress was possible */
++      if (!zctx->read.conn_eof)
++      {
++	dprint (5, (debugfile, "zstrm_read: inflate returned Z_BUF_ERROR. retrying.\n"));
++        goto retry;
++      }
++      zrc = 0;
++      break;
++    default:
++      /* bail on other rcs, such as Z_DATA_ERROR, or Z_MEM_ERROR */
++      dprint (4, (debugfile, "zstrm_read: inflate returned %d. aborting.\n", zrc));
++      zrc = -1;
+       break;
+-    case Z_DATA_ERROR:  /* corrupt input */
+-      /* zlib can inflateSync here, but do we really want to skip bytes
+-       * at this point? it may horribly mess up a protocol flow, so
+-       * throw an error instead */
+-      return -1;
+-    case Z_MEM_ERROR:  /* out of memory -- shouldn't happen with safe_malloc */
+-      errno = ENOMEM;
+-      return -1;
+-    case Z_BUF_ERROR:  /* output buffer full or nothing to read */
+-      /* since every call has an empty output buffer, this scenario
+-       * means we read nothing, so retry reading */
+-      zctx->read.has_pending = 0;  /* trigger a read */
+-      return mutt_zstrm_read (conn, buf, len);
+   }
+ 
+   return zrc;
+-- 
+2.24.1
+

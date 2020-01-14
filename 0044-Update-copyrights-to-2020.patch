@@ -1,0 +1,67 @@
+From be406edef94776388e52f9be3dd31864b146e457 Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Sat, 11 Jan 2020 13:47:56 -0800
+Subject: [PATCH] Update copyrights to 2020.
+
+---
+ COPYRIGHT           | 2 +-
+ doc/manual.xml.head | 2 +-
+ doc/mutt.man        | 2 +-
+ main.c              | 2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/COPYRIGHT b/COPYRIGHT
+index 416c96a2..0dab825e 100644
+--- a/COPYRIGHT
++++ b/COPYRIGHT
+@@ -17,7 +17,7 @@ Copyright (C) 1999-2002 Tommi Komulainen <Tommi.Komulainen@iki.fi>
+ Copyright (C) 2000-2004 Edmund Grimley Evans <edmundo@rano.org>
+ Copyright (C) 2000-2019 David Champion <dgc.mutt@c13.us>
+ Copyright (C) 2006-2009 Rocco Rutte <pdmef@gmx.net>
+-Copyright (C) 2014-2019 Kevin J. McCarthy <kevin@8t8.us>
++Copyright (C) 2014-2020 Kevin J. McCarthy <kevin@8t8.us>
+ 
+     This program is free software; you can redistribute it and/or modify
+     it under the terms of the GNU General Public License as published by
+diff --git a/doc/manual.xml.head b/doc/manual.xml.head
+index b16d03a9..54784bd1 100644
+--- a/doc/manual.xml.head
++++ b/doc/manual.xml.head
+@@ -220,7 +220,7 @@ denote that the argument may be repeated arbitrary times.
+ <title>Copyright</title>
+ 
+ <para>
+-Mutt is Copyright &copy; 1996-2019 Michael R. Elkins
++Mutt is Copyright &copy; 1996-2020 Michael R. Elkins
+ <email>me@mutt.org</email> and others.
+ </para>
+ 
+diff --git a/doc/mutt.man b/doc/mutt.man
+index c0b00bf6..2b9b287a 100644
+--- a/doc/mutt.man
++++ b/doc/mutt.man
+@@ -1,7 +1,7 @@
+ .\" -*-nroff-*-
+ .\"
+ .\"
+-.\"     Copyright (C) 1996-2019 Michael R. Elkins <me@cs.hmc.edu>
++.\"     Copyright (C) 1996-2020 Michael R. Elkins <me@cs.hmc.edu>
+ .\" 
+ .\"     This program is free software; you can redistribute it and/or modify
+ .\"     it under the terms of the GNU General Public License as published by
+diff --git a/main.c b/main.c
+index fa390cd1..413c44de 100644
+--- a/main.c
++++ b/main.c
+@@ -93,7 +93,7 @@ Copyright (C) 1999-2017 Brendan Cully <brendan@kublai.com>\n\
+ Copyright (C) 1999-2002 Tommi Komulainen <Tommi.Komulainen@iki.fi>\n\
+ Copyright (C) 2000-2004 Edmund Grimley Evans <edmundo@rano.org>\n\
+ Copyright (C) 2006-2009 Rocco Rutte <pdmef@gmx.net>\n\
+-Copyright (C) 2014-2019 Kevin J. McCarthy <kevin@8t8.us>\n";
++Copyright (C) 2014-2020 Kevin J. McCarthy <kevin@8t8.us>\n";
+ 
+ static const char *Thanks = N_("\
+ Many others not mentioned here contributed code, fixes,\n\
+-- 
+2.24.1
+

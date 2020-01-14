@@ -1,0 +1,30 @@
+From 4977bb0aff44ce5af1a9af1a1d0b93288366e9c4 Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Sun, 8 Dec 2019 19:11:01 -0800
+Subject: [PATCH] Fix trash_append to use ctx parameter instead of Context.
+
+In all current cases, an open context with deleted messages will be
+"Context", but it's incorrect to not use the parameter.
+---
+ mx.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/mx.c b/mx.c
+index 575cdfdb..96256178 100644
+--- a/mx.c
++++ b/mx.c
+@@ -798,9 +798,9 @@ static int trash_append (CONTEXT *ctx)
+     return 0;  /* we are in the trash folder: simple sync */
+ 
+ #ifdef USE_IMAP
+-  if (Context->magic == MUTT_IMAP && mx_is_imap (TrashPath))
++  if (ctx->magic == MUTT_IMAP && mx_is_imap (TrashPath))
+   {
+-    if (!imap_fast_trash (Context, TrashPath))
++    if (!imap_fast_trash (ctx, TrashPath))
+       return 0;
+   }
+ #endif
+-- 
+2.24.1
+

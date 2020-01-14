@@ -1,0 +1,41 @@
+From ee220ca96b2d7f0c8860674a0066a9d5a6c0517a Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Sun, 1 Dec 2019 07:31:41 -0800
+Subject: [PATCH] Fix copyright header in mutt_zstrm.[ch]
+
+In <https://gitlab.com/muttmua/mutt/merge_requests/60#note_252772011>
+Fabian noticed that he copied the header file as a template but forgot
+to adjust the copyright line at the top to himself.
+
+Also, adjust the formats in both to match the rest of mutt, so the
+copyright updater script will work properly.
+---
+ mutt_zstrm.c | 2 +-
+ mutt_zstrm.h | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/mutt_zstrm.c b/mutt_zstrm.c
+index 406234c5..d7d5247d 100644
+--- a/mutt_zstrm.c
++++ b/mutt_zstrm.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright 2019 Fabian Groffen <grobian@gentoo.org>
++ * Copyright (C) 2019 Fabian Groffen <grobian@gentoo.org>
+  *
+  *     This program is free software; you can redistribute it and/or modify
+  *     it under the terms of the GNU General Public License as published by
+diff --git a/mutt_zstrm.h b/mutt_zstrm.h
+index 0aad0ae0..9c3098a4 100644
+--- a/mutt_zstrm.h
++++ b/mutt_zstrm.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (C) 1999-2000 Tommi Komulainen <Tommi.Komulainen@iki.fi>
++ * Copyright (C) 2019 Fabian Groffen <grobian@gentoo.org>
+  *
+  *     This program is free software; you can redistribute it and/or modify
+  *     it under the terms of the GNU General Public License as published by
+-- 
+2.24.1
+

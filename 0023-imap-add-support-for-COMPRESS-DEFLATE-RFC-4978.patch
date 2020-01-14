@@ -1,0 +1,537 @@
+From 136ae0add512f21bc418f9e31a2f1b970ad1a490 Mon Sep 17 00:00:00 2001
+From: Fabian Groffen <grobian@gentoo.org>
+Date: Mon, 11 Nov 2019 08:34:49 +0100
+Subject: [PATCH] imap: add support for COMPRESS=DEFLATE, RFC 4978
+
+- added mutt_zstrm which allows wrapping an existing connection with
+  deflate/inflate (zlib compression)
+- call mutt_zstrm_wrap_conn when setting up an IMAP connection if the
+  server supports COMPRESSION=DEFLATE and imap_deflate evaluates to yes
+- add config quad-option imap_deflate enable/disable use of
+  (de)compression for IMAP connections, defaulting to yes
+- add configure check for zlib, --with-zlib to detect if mutt_zstrm can
+  (or should) be built
+
+Tested against a Dovecot IMAP server, observed easily 7x compression
+rates on received data, and 5x on sent data for a normal session.  Rates
+can be observed when the connection is closed on debug level 4 and
+higher.
+
+Bug: https://gitlab.com/muttmua/mutt/issues/92
+---
+ Makefile.am         |   4 +-
+ configure.ac        |  38 ++++++
+ imap/command.c      |   1 +
+ imap/imap.c         |  14 +++
+ imap/imap_private.h |   1 +
+ init.h              |  11 ++
+ mutt.h              |   6 +
+ mutt_zstrm.c        | 287 ++++++++++++++++++++++++++++++++++++++++++++
+ mutt_zstrm.h        |  28 +++++
+ 9 files changed, 388 insertions(+), 2 deletions(-)
+ create mode 100644 mutt_zstrm.c
+ create mode 100644 mutt_zstrm.h
+
+diff --git a/Makefile.am b/Makefile.am
+index 25507629..cede1adb 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -63,7 +63,7 @@ EXTRA_mutt_SOURCES = account.c bcache.c compress.c crypt-gpgme.c crypt-mod-pgp-c
+ 	mutt_idna.c mutt_sasl.c mutt_socket.c mutt_ssl.c mutt_ssl_gnutls.c \
+ 	mutt_tunnel.c pgp.c pgpinvoke.c pgpkey.c pgplib.c pgpmicalg.c \
+ 	pgppacket.c pop.c pop_auth.c pop_lib.c remailer.c resize.c sha1.c \
+-	sidebar.c smime.c smtp.c utf8.c wcwidth.c \
++	sidebar.c smime.c smtp.c utf8.c wcwidth.c mutt_zstrm.c \
+ 	bcache.h browser.h hcache.h mbyte.h monitor.h mutt_idna.h remailer.h url.h
+ 
+ EXTRA_DIST = COPYRIGHT GPL OPS OPS.PGP OPS.CRYPT OPS.SMIME TODO UPDATING \
+@@ -77,7 +77,7 @@ EXTRA_DIST = COPYRIGHT GPL OPS OPS.PGP OPS.CRYPT OPS.SMIME TODO UPDATING \
+ 	rfc2231.h rfc822.h rfc3676.h sha1.h sort.h mime.types VERSION prepare \
+ 	_mutt_regex.h OPS.MIX README.SECURITY remailer.c remailer.h browser.h \
+ 	mbyte.h lib.h extlib.c pgpewrap.c smime_keys.pl pgplib.h \
+-	README.SSL smime.h group.h \
++	README.SSL smime.h group.h mutt_zstrm.h \
+ 	muttbug pgppacket.h depcomp ascii.h BEWARE PATCHES patchlist.sh \
+ 	ChangeLog mkchangelog.sh mkreldate.sh mutt_idna.h sidebar.h OPS.SIDEBAR \
+ 	snprintf.c regex.c crypt-gpgme.h hcachever.sh.in \
+diff --git a/configure.ac b/configure.ac
+index 8c1c27ee..4e9cf2b2 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -756,6 +756,44 @@ then
+ fi
+ AM_CONDITIONAL(USE_GSS, test x$need_gss = xyes)
+ 
++# if zlib
++AC_ARG_WITH(zlib, AS_HELP_STRING([--with-zlib@<:@=PFX@:>@],[Enable DEFLATE support for IMAP using libz]),
++    zlib_prefix="$withval", zlib_prefix="auto")
++if test "$zlib_prefix" != "no"
++then
++  if test "$need_imap" = "yes"
++  then
++	have_zlib=
++	saved_LDFLAGS="$LDFLAGS"
++	saved_CPPFLAGS="$CPPFLAGS"
++	if test "$zlib_prefix" != "yes"
++	then
++	  LDFLAGS="$LDFLAGS -L$zlib_prefix/lib"
++      CPPFLAGS="$CPPFLAGS -I$zlib_prefix/include"
++	fi
++	AC_CHECK_HEADERS([zlib.h], [AC_CHECK_LIB([z], [deflate],
++					 [have_zlib=yes])])
++	if test "x$have_zlib" = "x"
++	then
++	  if test "x$zlib_prefix" != "xauto"
++	  then
++		AC_MSG_ERROR([ZLIB requested, but library or headers not found])
++	  fi
++	  zlib_prefix=no
++	else
++	  MUTTLIBS="$MUTTLIBS -lz"
++	  AC_DEFINE(USE_ZLIB, 1, [Define if you have libz available])
++	  MUTT_LIB_OBJECTS="$MUTT_LIB_OBJECTS mutt_zstrm.o"
++	  zlib_prefix=yes
++	fi
++	LDFLAGS="$saved_LDFLAGS"
++	CPPFLAGS="$saved_CPPFLAGS"
++  else
++    AC_MSG_WARN([ZLIB was requested but IMAP is not enabled])
++  fi
++fi
++AM_CONDITIONAL(USE_ZLIB, test x$zlib_prefix = xyes)
++
+ dnl -- end imap dependencies --
+ 
+ AC_ARG_WITH(ssl, AS_HELP_STRING([--with-ssl@<:@=PFX@:>@],[Enable TLS support using OpenSSL]),
+diff --git a/imap/command.c b/imap/command.c
+index 69ac0b02..cb3f9c0c 100644
+--- a/imap/command.c
++++ b/imap/command.c
+@@ -74,6 +74,7 @@ static const char * const Capabilities[] = {
+   "CONDSTORE",
+   "QRESYNC",
+   "LIST-EXTENDED",
++  "COMPRESS=DEFLATE",
+ 
+   NULL
+ };
+diff --git a/imap/imap.c b/imap/imap.c
+index 4bbe65c7..8e8684f8 100644
+--- a/imap/imap.c
++++ b/imap/imap.c
+@@ -34,6 +34,9 @@
+ #if defined(USE_SSL)
+ # include "mutt_ssl.h"
+ #endif
++#if defined(USE_ZLIB)
++# include "mutt_zstrm.h"
++#endif
+ #include "buffy.h"
+ #if USE_HCACHE
+ #include "hcache.h"
+@@ -426,6 +429,17 @@ IMAP_DATA* imap_conn_find (const ACCOUNT* account, int flags)
+     /* capabilities may have changed */
+     imap_exec (idata, "CAPABILITY", IMAP_CMD_QUEUE);
+ 
++#if defined(USE_ZLIB)
++    /* RFC 4978 */
++    if (mutt_bit_isset (idata->capabilities, COMPRESS_DEFLATE))
++    {
++      if (query_quadoption (OPT_IMAPDEFLATE,
++	      _("Use deflate compression on connection?")) == MUTT_YES &&
++	  imap_exec (idata, "COMPRESS DEFLATE", IMAP_CMD_FAIL_OK) != -2)
++	mutt_zstrm_wrap_conn (idata->conn);
++    }
++#endif
++
+     /* enable RFC6855, if the server supports that */
+     if (mutt_bit_isset (idata->capabilities, ENABLE))
+       imap_exec (idata, "ENABLE UTF8=ACCEPT", IMAP_CMD_QUEUE);
+diff --git a/imap/imap_private.h b/imap/imap_private.h
+index 88af5a48..3d1d9993 100644
+--- a/imap/imap_private.h
++++ b/imap/imap_private.h
+@@ -121,6 +121,7 @@ enum
+   CONDSTORE,                    /* RFC 7162 */
+   QRESYNC,                      /* RFC 7162 */
+   LIST_EXTENDED,                /* RFC 5258: IMAP4 - LIST Command Extensions */
++  COMPRESS_DEFLATE,             /* RFC 4978: COMPRESS=DEFLATE */
+ 
+   CAPMAX
+ };
+diff --git a/init.h b/init.h
+index bf7f1288..eec0db54 100644
+--- a/init.h
++++ b/init.h
+@@ -1437,6 +1437,17 @@ struct option_t MuttVars[] = {
+   ** those, and displays worse performance when enabled.  Your
+   ** mileage may vary.
+   */
++#ifdef USE_ZLIB
++  { "imap_deflate",		DT_QUAD, R_NONE, {.l=OPT_IMAPDEFLATE}, {.l=MUTT_YES} },
++  /*
++  ** .pp
++  ** When \fIset\fP, mutt will use the COMPRESS=DEFLATE extension (RFC
++  ** 4978) if advertised by the server.
++  ** .pp
++  ** In general a good compression efficiency can be achieved, which
++  ** speeds up reading large mailboxes also on fairly good connections.
++  */
++#endif
+   { "imap_delim_chars",		DT_STR, R_NONE, {.p=&ImapDelimChars}, {.p="/."} },
+   /*
+   ** .pp
+diff --git a/mutt.h b/mutt.h
+index 41bec8cc..aa2ab672 100644
+--- a/mutt.h
++++ b/mutt.h
+@@ -318,6 +318,9 @@ enum
+   OPT_FORWEDIT,
+   OPT_FCCATTACH,
+   OPT_INCLUDE,
++#if defined(USE_IMAP) && defined(USE_ZLIB)
++  OPT_IMAPDEFLATE,
++#endif
+   OPT_MFUPTO,
+   OPT_MIMEFWD,
+   OPT_MIMEFWDREST,
+@@ -444,6 +447,9 @@ enum
+   OPTIMAPPEEK,
+   OPTIMAPQRESYNC,
+   OPTIMAPSERVERNOISE,
++#ifdef USE_ZLIB
++  OPTIMAPDEFLATE,
++#endif
+ #endif
+ #if defined(USE_SSL)
+ # ifndef USE_SSL_GNUTLS
+diff --git a/mutt_zstrm.c b/mutt_zstrm.c
+new file mode 100644
+index 00000000..fefdf995
+--- /dev/null
++++ b/mutt_zstrm.c
+@@ -0,0 +1,287 @@
++/*
++ * Copyright 2019 Fabian Groffen <grobian@gentoo.org>
++ *
++ *     This program is free software; you can redistribute it and/or modify
++ *     it under the terms of the GNU General Public License as published by
++ *     the Free Software Foundation; either version 2 of the License, or
++ *     (at your option) any later version.
++ *
++ *     This program is distributed in the hope that it will be useful,
++ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *     GNU General Public License for more details.
++ *
++ *     You should have received a copy of the GNU General Public License
++ *     along with this program; if not, write to the Free Software
++ *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
++ */
++
++#if HAVE_CONFIG_H
++# include "config.h"
++#endif
++
++#include <zlib.h>
++#include <errno.h>
++
++#include "mutt.h"
++#include "mutt_socket.h"
++#include "mutt_zstrm.h"
++
++typedef struct
++{
++  struct zstrm_direction {
++    z_stream z;
++    char *buf;
++    unsigned int len;
++    unsigned int pos;
++    unsigned char has_pending:1;
++    unsigned char is_eof:1;
++  } read, write;
++
++  /* underlying stream */
++  CONNECTION next_conn;
++}
++zstrmctx;
++
++/* simple wrapper functions to match zlib interface for calling
++ * malloc/free */
++static void *mutt_zstrm_malloc (void* op, unsigned int sze, unsigned int v)
++{
++  (void) op;
++
++  return safe_calloc (sze, v);
++}
++
++static void mutt_zstrm_free (void* op, void* ptr)
++{
++  (void) op;
++
++  FREE (&ptr);
++}
++
++static int mutt_zstrm_open (CONNECTION* conn)
++{
++  /* cannot open a zlib connection, must wrap an existing one */
++  return -1;
++}
++
++static int mutt_zstrm_close (CONNECTION* conn)
++{
++  zstrmctx* zctx = conn->sockdata;
++  int rc = zctx->next_conn.conn_close (&zctx->next_conn);
++
++  dprint (4, (debugfile, "zstrm_close: read %llu->%llu (%.1fx) "
++	"wrote %llu<-%llu (%.1fx)\n",
++	zctx->read.z.total_in, zctx->read.z.total_out,
++	(float)zctx->read.z.total_out / (float)zctx->read.z.total_in,
++	zctx->write.z.total_in, zctx->write.z.total_out,
++	(float)zctx->write.z.total_in / (float)zctx->write.z.total_out));
++
++  inflateEnd (&zctx->read.z);
++  deflateEnd (&zctx->write.z);
++  FREE (&zctx->read.buf);
++  FREE (&zctx->write.buf);
++  FREE (&zctx);
++
++  return rc;
++}
++
++static int mutt_zstrm_read (CONNECTION* conn, char* buf, size_t len)
++{
++  zstrmctx* zctx = conn->sockdata;
++  int rc = 0;
++  int zrc;
++  int inflatemode = Z_SYNC_FLUSH;
++
++  /* shortcut end of stream call */
++  if (zctx->read.has_pending == 1 && zctx->read.is_eof == 1)
++  {
++    /* next read will yield an error */
++    zctx->read.has_pending = 0;
++    zctx->read.is_eof = 0;
++    return 0;
++  }
++
++  /* when avail_out was 0 on last call, we need to call inflate again,
++   * because more data might be available using the current input, so
++   * avoid callling read on the underlying stream in that case (for it
++   * might block) */
++  if (zctx->read.has_pending == 0 && zctx->read.pos == 0)
++  {
++    rc = zctx->next_conn.conn_read (&zctx->next_conn,
++	zctx->read.buf, zctx->read.len);
++    dprint (4, (debugfile, "zstrm_read: consuming data from next "
++	"stream: %d bytes\n", rc));
++    /* error or end of stream? ensure zlib flushes whatever it can */
++    if (rc <= 0)
++      inflatemode = Z_FINISH;
++    else
++      zctx->read.pos += rc;
++  }
++
++  zctx->read.z.avail_in = (uInt) zctx->read.pos;
++  zctx->read.z.next_in = (Bytef*) zctx->read.buf;
++  zctx->read.z.avail_out = (uInt) len;
++  zctx->read.z.next_out = (Bytef*) buf;
++
++  zrc = inflate (&zctx->read.z, inflatemode);
++  dprint (4, (debugfile, "zstrm_read: rc=%d, "
++	"consumed %u/%u bytes, produced %u/%u bytes\n", zrc,
++	zctx->read.pos - zctx->read.z.avail_in, zctx->read.pos,
++	len - zctx->read.z.avail_out, len));
++
++  /* shift any remaining input data to the front of the buffer */
++  if ((Bytef*) zctx->read.buf != zctx->read.z.next_in)
++  {
++    memmove(zctx->read.buf, zctx->read.z.next_in, zctx->read.z.avail_in);
++    zctx->read.pos = zctx->read.z.avail_in;
++  }
++
++  switch (zrc)
++  {
++    case Z_OK:          /* progress has been made */
++      zrc = len - zctx->read.z.avail_out;  /* "returned" bytes */
++      if (zrc == 0)
++      {
++	/* there was progress, so must have been reading input */
++	dprint (4, (debugfile, "zstrm_read: inflate just consumed\n"));
++	/* re-call ourselves to read more bytes */
++	zctx->read.has_pending = 0;  /* trigger a read */
++	return mutt_zstrm_read (conn, buf, len);
++      }
++      break;
++    case Z_STREAM_END:  /* everything flushed, nothing remaining */
++      zrc = len - zctx->read.z.avail_out;  /* "returned" bytes */
++      zctx->read.has_pending = 1;
++      zctx->read.is_eof = 1;
++      break;
++    case Z_DATA_ERROR:  /* corrupt input */
++      /* zlib can inflateSync here, but do we really want to skip bytes
++       * at this point? it may horribly mess up a protocol flow, so
++       * throw an error instead */
++      return -1;
++    case Z_MEM_ERROR:  /* out of memory -- shouldn't happen with safe_malloc */
++      errno = ENOMEM;
++      return -1;
++    case Z_BUF_ERROR:  /* output buffer full or nothing to read */
++      /* since every call has an empty output buffer, this scenario
++       * means we read nothing, so retry reading */
++      zctx->read.has_pending = 0;  /* trigger a read */
++      return mutt_zstrm_read (conn, buf, len);
++  }
++
++  return zrc;
++}
++
++static int mutt_zstrm_poll (CONNECTION* conn, time_t wait_secs)
++{
++  zstrmctx* zctx = conn->sockdata;
++
++  dprint (4, (debugfile, "zstrm_poll: %s\n",
++	zctx->read.z.avail_out == 0 || zctx->read.pos > 0 ?
++	"last read wrote full buffer" : "falling back on next stream"));
++  if (zctx->read.z.avail_out == 0 || zctx->read.pos > 0)
++    return 1;
++  else
++    return zctx->next_conn.conn_poll (&zctx->next_conn, wait_secs);
++}
++
++static int mutt_zstrm_write (CONNECTION* conn, const char* buf, size_t count)
++{
++  zstrmctx* zctx = conn->sockdata;
++  int rc;
++  int zrc;
++  char *wbufp;
++
++  zctx->write.z.avail_in = (uInt) count;
++  zctx->write.z.next_in = (Bytef*) buf;
++  zctx->write.z.avail_out = (uInt) zctx->write.len;
++  zctx->write.z.next_out = (Bytef*) zctx->write.buf;
++
++  do
++  {
++    zrc = deflate (&zctx->write.z, Z_PARTIAL_FLUSH);
++    if (zrc == Z_OK)
++    {
++      /* push out produced data to the underlying stream */
++      zctx->write.pos = zctx->write.len - zctx->write.z.avail_out;
++      wbufp = zctx->write.buf;
++      dprint (4, (debugfile, "zstrm_write: deflate consumed %d/%d bytes\n",
++	  count - zctx->write.z.avail_in, count));
++      while (zctx->write.pos > 0)
++      {
++	rc = zctx->next_conn.conn_write (&zctx->next_conn,
++	    wbufp, zctx->write.pos);
++	dprint (4, (debugfile, "zstrm_write: next stream wrote: %d bytes\n",
++	    rc));
++	if (rc < 0)
++	  return -1;  /* we can't recover from write failure */
++
++	wbufp += rc;
++	zctx->write.pos -= rc;
++      }
++
++      /* see if there's more for us to do, retry if the output buffer
++       * was full (there may be something in zlib buffers), and retry
++       * when there is still available input data */
++      if (zctx->write.z.avail_out != 0 && zctx->write.z.avail_in == 0)
++	break;
++
++      zctx->write.z.avail_out = (uInt) zctx->write.len;
++      zctx->write.z.next_out = (Bytef*) zctx->write.buf;
++    }
++    else
++    {
++      /* compression went wrong, but this is basically impossible
++       * according to the docs */
++      return -1;
++    }
++  } while (1);
++
++  rc = (int) count;
++  return rc <= 0 ? 1 : rc;  /* avoid wrong behaviour due to overflow */
++}
++
++void mutt_zstrm_wrap_conn (CONNECTION* conn)
++{
++  zstrmctx* zctx;
++
++  zctx = (zstrmctx*) safe_calloc (1, sizeof (zstrmctx));
++  /* store wrapped stream as next stream */
++  zctx->next_conn.fd         = conn->fd;
++  zctx->next_conn.sockdata   = conn->sockdata;
++  zctx->next_conn.conn_open  = conn->conn_open;
++  zctx->next_conn.conn_close = conn->conn_close;
++  zctx->next_conn.conn_read  = conn->conn_read;
++  zctx->next_conn.conn_write = conn->conn_write;
++  zctx->next_conn.conn_poll  = conn->conn_poll;
++
++  /* replace connection with our wrappers, where appropriate */
++  conn->sockdata   = (void*) zctx;
++  conn->conn_open  = mutt_zstrm_open;
++  conn->conn_read  = mutt_zstrm_read;
++  conn->conn_write = mutt_zstrm_write;
++  conn->conn_close = mutt_zstrm_close;
++  conn->conn_poll  = mutt_zstrm_poll;
++
++  /* allocate/setup (de)compression buffers */
++  zctx->read.len  = HUGE_STRING;
++  zctx->read.buf  = safe_malloc (zctx->read.len);
++  zctx->read.pos  = 0;
++  zctx->write.len = HUGE_STRING;
++  zctx->write.buf = safe_malloc (zctx->write.len);
++  zctx->write.pos = 0;
++
++  /* initialise zlib for inflate and deflate for RFC-4978 */
++  zctx->read.z.zalloc = mutt_zstrm_malloc;
++  zctx->read.z.zfree  = mutt_zstrm_free;
++  zctx->read.z.opaque = NULL;
++  zctx->read.z.avail_out = zctx->read.len;
++  inflateInit2 (&zctx->read.z, -15);
++  zctx->write.z.zalloc = mutt_zstrm_malloc;
++  zctx->write.z.zfree  = mutt_zstrm_free;
++  zctx->write.z.opaque = NULL;
++  zctx->write.z.avail_out = zctx->write.len;
++  deflateInit2 (&zctx->write.z, Z_DEFAULT_COMPRESSION,
++      Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
++}
+diff --git a/mutt_zstrm.h b/mutt_zstrm.h
+new file mode 100644
+index 00000000..0aad0ae0
+--- /dev/null
++++ b/mutt_zstrm.h
+@@ -0,0 +1,28 @@
++/*
++ * Copyright (C) 1999-2000 Tommi Komulainen <Tommi.Komulainen@iki.fi>
++ *
++ *     This program is free software; you can redistribute it and/or modify
++ *     it under the terms of the GNU General Public License as published by
++ *     the Free Software Foundation; either version 2 of the License, or
++ *     (at your option) any later version.
++ *
++ *     This program is distributed in the hope that it will be useful,
++ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *     GNU General Public License for more details.
++ *
++ *     You should have received a copy of the GNU General Public License
++ *     along with this program; if not, write to the Free Software
++ *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
++ */
++
++#ifndef _MUTT_ZSTRM_H_
++#define _MUTT_ZSTRM_H_ 1
++
++#include "mutt_socket.h"
++
++#if defined(USE_ZLIB)
++void mutt_zstrm_wrap_conn (CONNECTION* conn);
++#endif
++
++#endif /* _MUTT_ZSTRM_H_ */
+-- 
+2.24.1
+

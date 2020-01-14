@@ -1,0 +1,28 @@
+From e8214c87a3adb7067fff527210501332d794eec9 Mon Sep 17 00:00:00 2001
+From: Tamotsu TAKAHASHI <ttakah@gmail.com>
+Date: Thu, 28 Nov 2019 07:13:47 +0000
+Subject: [PATCH] Update copyright year
+
+---
+ po/ja.po | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/po/ja.po b/po/ja.po
+index 750ef5aa..8da3dad4 100644
+--- a/po/ja.po
++++ b/po/ja.po
+@@ -1,9 +1,9 @@
+ # Japanese messages for Mutt.
+-# Copyright (C) 2002, 2003, 2004, 2005, 2007, 2008, 2011, 2013, 2015, 2016, 2017, 2018 mutt-j ML members.
++# Copyright (C) 2002, 2003, 2004, 2005, 2007, 2008, 2011, 2013, 2015, 2016, 2017, 2018, 2019 mutt-j ML members.
+ # This file is distributed under the same license as the Mutt package.
+ # FIRST AUTHOR Kikutani Makoto <kikutani@Galaxy.net>, 1999.
+ # 2nd AUTHOR OOTA,Toshiya <ribbon@users.sourceforge.net>, 2002.
+-#  (with TAKAHASHI Tamotsu <ttakah@lapis.plala.or.jp>, 2003, 2004, 2005, 2007, 2008, 2009, 2011, 2013, 2015, 2016, 2017, 2018).
++#  (with TAKAHASHI Tamotsu <ttakah@lapis.plala.or.jp>, 2003, 2004, 2005, 2007, 2008, 2009, 2011, 2013, 2015, 2016, 2017, 2018, 2019).
+ # oota toshiya <ribbon@users.sourceforge.net>, 2008, 2011, 2017, 2018.
+ #
+ msgid ""
+-- 
+2.24.1
+
