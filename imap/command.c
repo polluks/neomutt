@@ -781,6 +781,39 @@ static void cmd_parse_search(struct ImapAccountData *adata, const char *s)
 }
 
 /**
+ * find_munged_mailbox - Find a Mailbox by its (possibly encoded) name
+ * @param adata Imap Account data
+ * @param name  Mailbox to find
+ * @retval ptr Mailbox
+ *
+ * Non-ASCII Mailbox names are encoded (munged) when communicating with the server.
+ * We store the munged and quoted name in ImapMboxData for quick lookups.
+ */
+static struct Mailbox *find_munged_mailbox(struct ImapAccountData *adata, const char *name)
+{
+  if (!adata || !adata->account || !name)
+    return NULL;
+
+  char quoted[1024] = { 0 };
+  if (name[0] != '"')
+  {
+    // We quote every Mailbox name, but the server only quotes when necessary
+    imap_quote_string(quoted, sizeof(quoted), name, false);
+    name = quoted;
+  }
+
+  struct MailboxNode *np = NULL;
+  STAILQ_FOREACH(np, &adata->account->mailboxes, entries)
+  {
+    struct ImapMboxData *mdata = imap_mdata_get(np->mailbox);
+    if (mutt_str_strcmp(name, mdata->munge_name) == 0)
+      return np->mailbox;
+  }
+
+  return NULL;
+}
+
+/**
  * cmd_parse_status - Parse status from server
  * @param adata Imap Account data
  * @param s     Command string with status info
@@ -794,15 +827,8 @@ static void cmd_parse_status(struct ImapAccountData *adata, char *s)
 
   s = imap_next_word(mailbox);
   s[-1] = '\0';
-  imap_unmunge_mbox_name(adata->unicode, mailbox);
 
-  struct Url url;
-  mutt_account_tourl(&adata->conn_account, &url);
-  url.path = mailbox;
-  char path[PATH_MAX];
-  url_tostring(&url, path, sizeof(path), 0);
-
-  struct Mailbox *m = mx_mbox_find2(path);
+  struct Mailbox *m = find_munged_mailbox(adata, mailbox);
   struct ImapMboxData *mdata = imap_mdata_get(m);
   if (!mdata)
   {
