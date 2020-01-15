@@ -790,37 +790,11 @@ static void cmd_parse_search(struct ImapAccountData *adata, const char *s)
  */
 static void cmd_parse_status(struct ImapAccountData *adata, char *s)
 {
-  unsigned int litlen = 0;
-
   char *mailbox = imap_next_word(s);
 
-  /* We need a real tokenizer. */
-  if (imap_get_literal_count(mailbox, &litlen) == 0)
-  {
-    if (imap_cmd_step(adata) != IMAP_RES_CONTINUE)
-    {
-      adata->status = IMAP_FATAL;
-      return;
-    }
-
-    if (strlen(adata->buf) < litlen)
-    {
-      mutt_debug(LL_DEBUG1, "Error parsing STATUS mailbox\n");
-      return;
-    }
-
-    mailbox = adata->buf;
-    s = mailbox + litlen;
-    s[0] = '\0';
-    s++;
-    SKIPWS(s);
-  }
-  else
-  {
-    s = imap_next_word(mailbox);
-    s[-1] = '\0';
-    imap_unmunge_mbox_name(adata->unicode, mailbox);
-  }
+  s = imap_next_word(mailbox);
+  s[-1] = '\0';
+  imap_unmunge_mbox_name(adata->unicode, mailbox);
 
   struct Url url;
   mutt_account_tourl(&adata->conn_account, &url);
